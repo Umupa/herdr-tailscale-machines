@@ -54,6 +54,12 @@ const isGitHost = (h) => h.user === "git" || GIT.test(h.alias) || GIT.test(h.hos
 
 // ---- Tailscale
 
+// macOS names a computer after its owner: "tivirus的Mac mini", "Can's MacBook Pro".
+function guessUser(hostName) {
+  const m = (hostName ?? "").match(/^([A-Za-z0-9._-]+)(?:的|'s |’s )/);
+  return m ? m[1].toLowerCase() : null;
+}
+
 const TAILSCALE = ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"];
 const PHONES = /^(ios|android|tvos)$/i;
 
@@ -79,6 +85,7 @@ async function tailscale() {
           online: Boolean(p.Online),
           mine: p.UserID === me,
           seen: p.LastSeen,
+          user: guessUser(p.HostName),
         };
       })
       .sort((a, b) => (b.online - a.online) || (b.mine - a.mine) || a.title.localeCompare(b.title));
@@ -128,6 +135,7 @@ async function lan(platform) {
       title: unescape(title),
       sub: port === "22" ? host : `${host}:${port}`,
       online: true,
+      user: guessUser(unescape(title)),
     });
   }
   return [...seen.values()].sort((a, b) => a.title.localeCompare(b.title));
@@ -228,8 +236,16 @@ export default class TailscaleMachines extends View {
     return this.added.find((m) => m.target === target || m.name === target || (m.host ?? "").toLowerCase() === host || (m.target ?? "").replace(/^[^@]*@/, "").replace(/:\d+$/, "").toLowerCase() === host);
   }
 
-  withUser(host) {
-    return this.user ? `${this.user}@${host}` : host;
+  // The "as" field, else the owner named in a Mac's name, else ssh's default.
+  withUser(host, guess) {
+    const user = this.user || guess;
+    return user ? `${user}@${host}` : host;
+  }
+
+  // Who ssh logs in as, before the rest: "tivirus@ · tivirus的Mac mini · 100.82.251.54".
+  asSub(p) {
+    const user = this.user || p.user;
+    return user ? `${user}@ · ${p.sub}` : p.sub;
   }
 
   // Every row the list shows, in order, each with what Add runs.
@@ -241,13 +257,13 @@ export default class TailscaleMachines extends View {
     sections.push({
       key: "ts", title: "Tailscale", icon: OWN("tailnet"),
       note: ts === null ? "looking" : ts.state === "missing" ? "Not installed" : ts.state ?? (ts.peers.length ? null : "No other computers on your tailnet"),
-      rows: (ts?.peers ?? []).map((p) => ({ ...p, icon: /linux|windows/i.test(p.os) ? I("server") : OWN("laptop"), target: this.withUser(p.host), name: p.name, dim: !p.online, right: p.online ? null : ago(p.seen) })).filter(hit),
+      rows: (ts?.peers ?? []).map((p) => ({ ...p, icon: /linux|windows/i.test(p.os) ? I("server") : OWN("laptop"), target: this.withUser(p.host, p.user), sub: this.asSub(p), name: p.name, dim: !p.online, right: p.online ? null : ago(p.seen) })).filter(hit),
     });
     if (this.lan !== null) {
       sections.push({
         key: "lan", title: "Local network", icon: OWN("wifi"),
         note: this.lan === undefined ? "looking" : this.lan.length ? null : "Nothing here announces ssh",
-        rows: (this.lan ?? []).map((p) => ({ ...p, icon: OWN("laptop"), target: this.withUser(p.host) })).filter(hit),
+        rows: (this.lan ?? []).map((p) => ({ ...p, icon: OWN("laptop"), target: this.withUser(p.host, p.user), sub: this.asSub(p) })).filter(hit),
       });
     }
     sections.push({
@@ -299,15 +315,58 @@ export default class TailscaleMachines extends View {
       } catch {
         why = { message: (r.stderr || r.stdout || "it didn't answer").trim() };
       }
+      const msg = why?.message ?? "";
+      if (why && /host key verification failed/i.test(msg) && !/IDENTIFICATION HAS CHANGED/i.test(msg)) {
+        const key = await this.hostKey(target);
+        if (key) {
+          this.state[target] = { hostkey: key, row };
+          cx.notify();
+          return;
+        }
+      }
       if (!why) {
         delete this.state[target];
         if (row.custom) { this.search.set_value(""); this.typed = ""; }
       } else if (["hc_missing", "incompatible", "login_needed", "auth_failed", "host_key"].includes(why.kind) || /password|passphrase|host key|permission denied|login/i.test(why.message ?? "")) {
         this.pending.add(target);
-        this.state[target] = { needs: true, command: `hc machine add ${args.slice(2, 3).concat(args.slice(4)).map(shellArg).join(" ")}`, text: "It needs an answer first: a password, a new host key, or installing herdr-core there." };
+        const user = target.includes("@") ? target.split("@")[0] : null;
+        this.state[target] = { needs: true, command: `hc machine add ${args.slice(2, 3).concat(args.slice(4)).map(shellArg).join(" ")}`,
+          text: /password|permission denied|publickey/i.test(msg)
+            ? `ssh couldn't log in${user ? ` as ${user}` : ""} without a password. Herdr needs a key (ssh-copy-id) or another user in “as”.`
+            : "It needs an answer first: a password, or installing herdr-core there." };
       } else this.state[target] = { text: why.message || "it didn't work" };
       await this.refresh();
       cx.notify();
+    });
+  }
+
+  // The keys the host offers, their fingerprint, and the names this computer
+  // already trusts that same key under (the machine's LAN address, often).
+  async hostKey(target) {
+    const host = target.replace(/^[^@]*@/, "");
+    const m = host.match(/^(.*):(\d+)$/);
+    const [name, port] = m ? [m[1], m[2]] : [host, "22"];
+    const scan = await exec("ssh-keyscan", ["-T", "5", "-p", port, name], { timeout: 10000 }).catch(() => null);
+    const lines = (scan?.stdout ?? "").split("\n").filter((l) => l && !l.startsWith("#"));
+    if (!lines.length) return null;
+    const ed = lines.find((l) => l.includes(" ssh-ed25519 ")) ?? lines[0];
+    const fp = await exec("sh", ["-c", 'printf "%s\\n" "$1" | ssh-keygen -lf -', "sh", ed]).catch(() => null);
+    const blob = ed.split(" ")[2];
+    const known = (await readTextFile(`${home()}/.ssh/known_hosts`).catch(() => ""))
+      .split("\n").filter((l) => blob && l.includes(blob)).map((l) => l.split(" ")[0]).filter((n) => !n.startsWith("|"));
+    return { lines, fingerprint: (fp?.stdout ?? "").split(" ")[1] ?? "", known: [...new Set(known.flatMap((n) => n.split(",")))] };
+  }
+
+  trust(target, cx) {
+    const st = this.state[target];
+    if (!st?.hostkey) return;
+    this.state[target] = "adding";
+    cx.notify();
+    cx.spawn(async (cx) => {
+      const text = st.hostkey.lines.join("\n") + "\n";
+      await exec("sh", ["-c", 'mkdir -p "$HOME/.ssh" && printf "%s" "$1" >> "$HOME/.ssh/known_hosts"', "sh", text]).catch(() => null);
+      delete this.state[target];
+      this.add(st.row, cx);
     });
   }
 
@@ -319,9 +378,11 @@ export default class TailscaleMachines extends View {
       let address = null;
       try { address = JSON.parse(r?.stdout ?? "").address; } catch { /* below */ }
       if (address) {
-        this.close();
         run("terminal.peek", { terminal: address });
+        this.close();
+        return;
       }
+      this.failed = (r?.stderr || r?.stdout || "couldn't start a terminal").trim();
       cx.notify();
     });
   }
@@ -345,11 +406,25 @@ export default class TailscaleMachines extends View {
       .child(label);
   }
 
+  hostKeyCard(t, target) {
+    const k = this.state[target].hostkey;
+    return v_flex().gap(6).pl(35).pr(10).pb(8)
+      .child(div().text_size(12).text_color(t.muted).child(k.known.length
+        ? `Same host key you already trust for ${k.known.slice(0, 2).join(", ")}.`
+        : "First time connecting: check this is the machine's key."))
+      .child(div().text_size(11.5).text_color(t.dim).child(k.fingerprint))
+      .child(h_flex().gap(6).items_center()
+        .child(this.button(t, `tm-trust-${target}`, "Trust and add", (cx) => this.trust(target, cx), true))
+        .child(this.button(t, `tm-cancel-${target}`, "Cancel", (cx) => { delete this.state[target]; cx.notify(); })));
+  }
+
   message(t, target) {
     const st = this.state[target];
+    if (st.hostkey) return this.hostKeyCard(t, target);
     const text = String(st.text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     return v_flex().gap(6).pl(35).pr(10).pb(8)
       .child(div().text_size(12).text_color(t.blocked).child(TextView.html(`tm-msg-${target}`, `<span>${text}</span>`).selectable(true)))
+      .when(Boolean(st.needs && this.failed), (el) => el.child(div().text_size(12).text_color(t.dim).child(this.failed)))
       .when(Boolean(st.needs), (el) => el.child(h_flex().gap(6).items_center()
         .child(this.button(t, `tm-run-${target}`, "Answer in a terminal", (cx) => this.answer(st.command, cx), true))
         .child(this.button(t, `tm-copy-${target}`, this.copied === st.command ? "Copied" : "Copy command", (cx) => { cx.write_to_clipboard(st.command); this.copied = st.command; cx.notify(); }))));

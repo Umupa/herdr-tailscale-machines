@@ -8,7 +8,8 @@ Add a machine in [Herdr](https://herdr.dev) without typing: your Tailscale tailn
 - **Local network** Macs and Linux boxes that announce ssh
 - **ssh config** hosts, without GitHub / GitLab
 - Search, ↑ ↓, Enter to add; or type `user@host`
-- A password or host key? *Answer in a terminal*, and it's added
+- New host key? *Trust and add*, showing if you already trust it under another name
+- Guesses the ssh user from a Mac's name (`tivirus的Mac mini` → `tivirus@`), or set it in **as**
 
 ## Install
 
