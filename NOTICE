@@ -5,6 +5,10 @@ error handling of herdr-app's defaults/mods/machine-add/main.js at herdr-app
 0.1.15 (commit 17eac390c346a731ba1ac14816ad91dc7cd2209b),
 https://github.com/herdrdev/herdr-app, licensed under Apache-2.0 (LICENSE).
 
+mods/tailscale-footer/main.js is herdr-app 0.1.15's
+defaults/mods/workspace-chrome/main.js (same commit) with its footer's Add
+machine opening tailscale-machines.
+
 mods/tailscale-machines/icons/*.svg are Lucide, https://lucide.dev (ISC,
 mods/tailscale-machines/icons/LICENSE), except tailnet.svg, drawn for this mod.
 It is not Tailscale's logo; Tailscale is a trademark of Tailscale Inc., and

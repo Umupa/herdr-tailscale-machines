@@ -25,11 +25,11 @@ A dialog that replaces typing in Herdr's Add a machine: it lists computers found
 
 - `mods/tailscale-machines/main.js`, `mod.json`, `icons/` (Lucide `laptop`, `wifi`, `refresh-cw`, `square-terminal`, `key-round`; own `tailnet.svg`; Herdr's `workspace-chrome` `server`, `spinner`, `circle-check`).
 - herdr: `hc`, `exec`, `home`, `readTextFile`, `theme`, `props`, `closeOverlay`, `run`, `window`. gpui-base: `InputState`/`Input`, `TextView`, `ScrollHandle`.
-- Opened by `mod.open tailscale-machines` (`keys.json`: `cmd-shift-m`).
+- Opened by `mod.open tailscale-machines` (`keys.json`: `cmd-shift-m`), and by the sidebar footer's Add machine through `mods/tailscale-footer`: `mod.clone workspace-chrome` with that row's `mod.open` name changed, used as the layout's `sidebar-footer` block (`props: {footer: true}`).
 
 **Watch out:**
 
-- A mod can't be named `machine-add` (Herdr's shipped one wins), so Herdr's own Add machine buttons keep opening Herdr's window.
+- A mod can't be named `machine-add` (Herdr's shipped one wins). Settings → Machines and the welcome screen keep opening Herdr's window; only the footer is replaced, and its fork doesn't follow later workspace-chrome changes.
 - `dns-sd` never exits on its own: run it in the background and kill it after a sleep, all inside one `sh -c`.
 - Tailscale `HostName`s may hold spaces and CJK; use the MagicDNS label for the machine name.
 
