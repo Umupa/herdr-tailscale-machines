@@ -1,0 +1,11 @@
+Tailscale Machines for Herdr
+
+mods/tailscale-machines/main.js adapts the ssh config reading and the add /
+error handling of herdr-app's defaults/mods/machine-add/main.js at herdr-app
+0.1.15 (commit 17eac390c346a731ba1ac14816ad91dc7cd2209b),
+https://github.com/herdrdev/herdr-app, licensed under Apache-2.0 (LICENSE).
+
+mods/tailscale-machines/icons/*.svg are Lucide, https://lucide.dev (ISC,
+mods/tailscale-machines/icons/LICENSE), except tailnet.svg, drawn for this mod.
+It is not Tailscale's logo; Tailscale is a trademark of Tailscale Inc., and
+this mod is not affiliated with it.
