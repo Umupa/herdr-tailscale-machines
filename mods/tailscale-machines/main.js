@@ -330,10 +330,13 @@ export default class TailscaleMachines extends View {
       } else if (["hc_missing", "incompatible", "login_needed", "auth_failed", "host_key"].includes(why.kind) || /password|passphrase|host key|permission denied|login/i.test(why.message ?? "")) {
         this.pending.add(target);
         const user = target.includes("@") ? target.split("@")[0] : null;
-        this.state[target] = { needs: true, command: `hc machine add ${args.slice(2, 3).concat(args.slice(4)).map(shellArg).join(" ")}`,
-          text: /password|permission denied|publickey/i.test(msg)
-            ? `ssh couldn't log in${user ? ` as ${user}` : ""} without a password. Herdr needs a key (ssh-copy-id) or another user in “as”.`
-            : "It needs an answer first: a password, or installing herdr-core there." };
+        const password = /password|permission denied|publickey/i.test(msg);
+        const add = `hc machine add ${args.slice(2, 3).concat(args.slice(4)).map(shellArg).join(" ")}`;
+        // Without a key, ssh-copy-id asks the password once; then hc logs in on its own.
+        this.state[target] = { needs: true, command: password ? `ssh-copy-id ${shellArg(target)} && ${add}` : add,
+          text: password
+            ? `ssh couldn't log in${user ? ` as ${user}` : ""} without a password. Run this in a terminal once (or change “as”):`
+            : "Run this in a terminal to answer it (a password, or installing herdr-core there):" };
       } else this.state[target] = { text: why.message || "it didn't work" };
       await this.refresh();
       cx.notify();
@@ -367,23 +370,6 @@ export default class TailscaleMachines extends View {
       await exec("sh", ["-c", 'mkdir -p "$HOME/.ssh" && printf "%s" "$1" >> "$HOME/.ssh/known_hosts"', "sh", text]).catch(() => null);
       delete this.state[target];
       this.add(st.row, cx);
-    });
-  }
-
-  // Answer it in a terminal over this dialog; the row turns Added by itself.
-  answer(command, cx) {
-    cx.spawn(async (cx) => {
-      const line = `${command}; printf '\\n\\033[2mPress Enter to close\\033[0m'; read _`;
-      const r = await hc(["run", "--json", "--bg", "--no-parent", "--rm", "--cwd", home(), "--", "sh", "-c", line]).catch(() => null);
-      let address = null;
-      try { address = JSON.parse(r?.stdout ?? "").address; } catch { /* below */ }
-      if (address) {
-        run("terminal.peek", { terminal: address });
-        this.close();
-        return;
-      }
-      this.failed = (r?.stderr || r?.stdout || "couldn't start a terminal").trim();
-      cx.notify();
     });
   }
 
@@ -424,10 +410,9 @@ export default class TailscaleMachines extends View {
     const text = String(st.text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     return v_flex().gap(6).pl(35).pr(10).pb(8)
       .child(div().text_size(12).text_color(t.blocked).child(TextView.html(`tm-msg-${target}`, `<span>${text}</span>`).selectable(true)))
-      .when(Boolean(st.needs && this.failed), (el) => el.child(div().text_size(12).text_color(t.dim).child(this.failed)))
       .when(Boolean(st.needs), (el) => el.child(h_flex().gap(6).items_center()
-        .child(this.button(t, `tm-run-${target}`, "Answer in a terminal", (cx) => this.answer(st.command, cx), true))
-        .child(this.button(t, `tm-copy-${target}`, this.copied === st.command ? "Copied" : "Copy command", (cx) => { cx.write_to_clipboard(st.command); this.copied = st.command; cx.notify(); }))));
+        .child(div().flex_1().min_w(0).truncate().px(8).py(4).rounded(6).bg(t.background).border_1().border_color(t.border).text_size(12).text_color(t.foreground).child(st.command))
+        .child(this.button(t, `tm-copy-${target}`, this.copied === st.command ? "Copied" : "Copy", (cx) => { cx.write_to_clipboard(st.command); this.copied = st.command; cx.notify(); }, true))));
   }
 
   row(t, r, selected) {

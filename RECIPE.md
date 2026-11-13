@@ -21,7 +21,7 @@ A dialog that replaces typing in Herdr's Add a machine: it lists computers found
 - Typing filters every section by title, subtitle and host; sections with no match hide. Text with `@`, `.` or `:` and no spaces adds a "Typed" row. ↑/↓ (or Ctrl-P/N) move a highlight over rows that can be added, scrolling it into view; Enter adds it. Esc closes.
 - `as`: prefixed as `user@` to Tailscale and LAN targets; kept in localStorage. Empty: the owner in a Mac's default name (`^([A-Za-z0-9._-]+)(的|'s |’s )`, lowercased), else ssh's default. Rows show it as `user@ · ` before the subtitle.
 - A "Host key verification failed" (not a changed key): `ssh-keyscan -T 5 -p <port> <host>`, the ed25519 fingerprint (`ssh-keygen -lf -`) and the known_hosts names holding the same key blob ("Same host key you already trust for 192.168.31.56."), with Trust and add (appends the scanned lines to `~/.ssh/known_hosts`, adds again) and Cancel. A password failure says Herdr needs a key (ssh-copy-id) or another user.
-- Add: `hc machine add <target> --json [--name <name>]`. A row counts as added when a non-temporary machine in `hc machine ls` has that target, name or host. Errors of kind `hc_missing`, `incompatible`, `login_needed`, `auth_failed`, `host_key` (or password / host key wording) show "Answer in a terminal" (`hc run --json --bg --no-parent --rm` of the same command plus "Press Enter to close", then closes the dialog and `terminal.peek`s it) and "Copy command". Other errors show their message.
+- Add: `hc machine add <target> --json [--name <name>]`. A row counts as added when a non-temporary machine in `hc machine ls` has that target, name or host. Errors of kind `hc_missing`, `incompatible`, `login_needed`, `auth_failed`, `host_key` (or password / host key wording) show the command to run in a terminal (with `ssh-copy-id <target> && ` first when ssh wanted a password) in a box with a Copy button. Other errors show their message.
 - "New space": closes the dialog and runs `space.new {machine}`.
 
 **Built from:**
@@ -41,5 +41,5 @@ A dialog that replaces typing in Herdr's Add a machine: it lists computers found
 - With Tailscale running, the tailnet's computers appear first, online before offline; phones don't.
 - A Mac with Remote Login on the same network appears under Local network; this computer doesn't.
 - Typing narrows all sections; Enter adds the highlighted row, and it turns Added without reopening.
-- A machine that needs a password offers Answer in a terminal, and finishing there turns its row Added.
+- A machine that needs a password shows a command to copy; running it in a terminal turns its row Added.
 - `herdr-app check ~/.config/herdr-app/mods/tailscale-machines` passes.
