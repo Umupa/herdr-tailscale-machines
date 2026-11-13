@@ -2,6 +2,8 @@
 
 A dialog that replaces typing in Herdr's Add a machine: it lists computers found on your Tailscale tailnet, on the local network (ssh over mDNS) and in `~/.ssh/config`, searchable from one field, each added with one click or Enter.
 
+![Tailscale Machines](preview.png)
+
 **What you see:**
 
 - A 600px dialog (`mod.json` overlay `{kind: "dialog", width: 600}`), `t.popover`, 18px padding, 12px gaps.
